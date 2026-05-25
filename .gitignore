@@ -1,0 +1,32 @@
+# =========================
+# Spring Boot / Java
+# =========================
+backend/target/
+*.class
+*.log
+
+# =========================
+# Angular / Node
+# =========================
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+
+# =========================
+# IDE Files
+# =========================
+.idea/
+.vscode/
+*.iml
+
+# =========================
+# Operating System Files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Secret / Environment Files
+# =========================
+.env
+application-secret.properties
