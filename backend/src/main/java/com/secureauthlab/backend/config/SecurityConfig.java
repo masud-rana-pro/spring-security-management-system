@@ -23,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final CorsConfig corsConfig;
 
     // Configure HTTP security filters, public paths, and authorization rules
     @Bean
@@ -30,6 +31,8 @@ public class SecurityConfig {
         http
             // Disable CSRF protection since APIs use stateless token-based authorization
             .csrf(csrf -> csrf.disable())
+            // Apply CORS configuration to allow cross-origin requests from frontend
+            .cors(cors -> cors.configurationSource(corsConfig.corsConfigurationSource()))
             // Configure route access control policies
             .authorizeHttpRequests(auth -> {
                 // Allow unrestricted access to public and authentication endpoints

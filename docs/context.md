@@ -2147,3 +2147,247 @@ mvn clean compile সফল হয়েছে
 গিট প্রসেসটি সম্পন্ন করা হলে চ্যাটে জানান। আমরা তারপর পরবর্তী ধাপে যাবো: **Step 10: CORS Configuration**
 
 পরবর্তী ধাপে আমরা CORS (Cross-Origin Resource Sharing) কনফিগার করবো যাতে Angular frontend থেকে backend এ request পাঠানো যায়।
+
+# Step 10: CORS Configuration for Cross-Origin Requests
+
+এই ধাপে আমরা CORS (Cross-Origin Resource Sharing) কনফিগার করেছি। CORS একটি browser security mechanism যা এক origin এর web page কে অন্য origin এর resource access করার অনুমতি দেয়। Angular frontend (localhost:4200) থেকে Spring Boot backend (localhost:8080) এ request পাঠানোর জন্য CORS কনফিগার করা জরুরি।
+
+---
+
+## CORS কী এবং কেন দরকার?
+
+CORS = Cross-Origin Resource Sharing
+
+### সমস্যা: Same-Origin Policy
+
+ব্রাউজারের একটি built-in security policy আছে যাকে বলে Same-Origin Policy। এই policy বলে:
+"একটি webpage শুধু তার নিজের origin (protocol + domain + port) এ request পাঠাতে পারবে"
+
+```
+Frontend (Angular)         Backend (Spring Boot)
+http://localhost:4200       http://localhost:8080
+       |                           |
+       |  POST /api/auth/login     |
+       |  Origin: localhost:4200   |
+       |-------------------------->|
+       |                           |
+       |  BROWSER BLOCKS!          |
+       |  কারণ: origin mismatch    |
+       |<--------------------------|
+```
+
+### সমাধান: CORS
+
+Backend CORS configure করে বলে: "এই specific frontend origin থেকে আসা requests আমি allow করছি"
+
+### Preflight Request (OPTIONS)
+
+ব্রাউজার cross-origin request পাঠানোর আগে একটি OPTIONS request পাঠায় (preflight) যা server কে জিজ্ঞাসা করে: "আমি কি এই API call করতে পারি?" server CORS header সহ সঠিক response দিলে browser আসল request পাঠায়।
+
+```
+OPTIONS /api/auth/login
+Origin: http://localhost:4200
+Access-Control-Request-Method: POST
+```
+
+---
+
+## Step 10.1: CorsConfig.java তৈরি করা
+
+**ফাইল:** `backend/src/main/java/com/secureauthlab/backend/config/CorsConfig.java`
+
+```java
+package com.secureauthlab.backend.config;
+
+import java.util.Arrays;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.filter.CorsFilter;
+
+@Configuration
+public class CorsConfig {
+
+    @Value("${spring.web.cors.allowed-origins:http://localhost:4200}")
+    private String allowedOrigins;
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOriginPatterns(Arrays.asList(allowedOrigins.split(",")));
+        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
+        config.setAllowedHeaders(Arrays.asList("*"));
+        config.setAllowCredentials(true);
+        config.setExposedHeaders(Arrays.asList("Authorization"));
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
+    }
+
+    @Bean
+    public CorsFilter corsFilter() {
+        return new CorsFilter(corsConfigurationSource());
+    }
+}
+```
+
+### প্রতিটি Setting-এর ব্যাখ্যা:
+
+| Setting | Code | কাজ |
+|---------|------|-----|
+| allowedOrigins | `@Value("${...}")` | কোন frontend URL থেকে request আসবে (default: localhost:4200, properties থেকে পড়ে) |
+| setAllowedOriginPatterns | `config.setAllowedOriginPatterns(...)` | কোন origins allow করবে (একাধিক comma দিয়ে দেওয়া যায়) |
+| setAllowedMethods | `config.setAllowedMethods(...)` | GET, POST, PUT, DELETE, PATCH, OPTIONS allow করবে |
+| setAllowedHeaders | `config.setAllowedHeaders(Arrays.asList("*"))` | সব HTTP headers allow করবে (Content-Type, Authorization ইত্যাদি) |
+| setAllowCredentials | `config.setAllowCredentials(true)` | Authorization header (JWT token) পাঠানোর অনুমতি দেয় |
+| setExposedHeaders | `config.setExposedHeaders(Arrays.asList("Authorization"))` | Frontend JavaScript response থেকে Authorization header পড়তে পারবে |
+| registerCorsConfiguration("/**") | `source.registerCorsConfiguration("/**", config)` | CORS rules সব URL path এ apply করে |
+
+---
+
+## Step 10.2: SecurityConfig.java আপডেট করা
+
+**ফাইল:** `backend/src/main/java/com/secureauthlab/backend/config/SecurityConfig.java`
+
+### আগে ছিল:
+```java
+private final JwtAuthFilter jwtAuthFilter;
+@Bean
+public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    http
+        .csrf(csrf -> csrf.disable())
+        .authorizeHttpRequests(auth -> { ... })
+        .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+    return http.build();
+}
+```
+
+### এখন হয়েছে:
+```java
+private final JwtAuthFilter jwtAuthFilter;
+private final CorsConfig corsConfig;   // NEW
+
+@Bean
+public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    http
+        .csrf(csrf -> csrf.disable())
+        .cors(cors -> cors.configurationSource(corsConfig.corsConfigurationSource()))   // NEW
+        .authorizeHttpRequests(auth -> { ... })
+        .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+    return http.build();
+}
+```
+
+### `.cors()` line টি কী করে?
+
+`.cors()` Spring Security কে বলে: "CORS configuration apply করো যা CorsConfig class এ define করা আছে"
+
+`.cors()` না দিলে, CorsConfig class এবং CorsFilter bean থাকলেও Spring Security তাকে ignore করত। কারণ Spring Security নিজের filter chain এ CORS কে explicitly include করতে বলে।
+
+### Spring Security Filter Chain এখন:
+
+```
+Request আসলো
+    |
+    v
+1. CorsFilter (OPTIONS preflight handle করে)
+    |
+    v
+2. JwtAuthFilter (JWT token check করে)
+    |
+    v
+3. SecurityContextHolder (authentication set করে)
+    |
+    v
+4. @PreAuthorize check (role-based authorization)
+    |
+    v
+5. Controller (actual business logic)
+```
+
+---
+
+## CORS না থাকলে কী হতো?
+
+Browser console এ এই error দেখতে পেতেন:
+```
+Access to XMLHttpRequest at 'http://localhost:8080/api/auth/login'
+from origin 'http://localhost:4200' has been blocked by CORS policy
+```
+
+## CORS ঠিক থাকলে:
+
+কোনো error হবে না। Frontend smoothly backend API call করতে পারবে।
+
+---
+
+## Step 10 Complete Criteria
+
+```text
+CorsConfig.java তৈরি হয়েছে
+CorsConfigurationSource Bean তৈরি হয়েছে (allowed origins, methods, headers সহ)
+CorsFilter Bean তৈরি হয়েছে
+SecurityConfig এ .cors() যোগ হয়েছে
+mvn clean compile সফল হয়েছে
+CORS preflight request সঠিক response দেয়
+Frontend থেকে backend এ request পাঠানো যায়
+```
+
+---
+
+### Step 10 এর জন্য Git-এর পরবর্তী কাজ (আপনার করণীয়):
+
+এখন আপনি লোকাল ব্রাঞ্চে কাজ শেষ করেছেন। এই পরিবর্তনগুলো commit করে push করতে নিচের কমান্ডগুলো একে একে ম্যানুয়ালি রান করুন:
+
+1. **টার্মিনাল থেকে স্ট্যাটাস চেক করুন:**
+   ```bash
+   git status
+   ```
+
+2. **সব ফাইল গিট ট্র্যাকিং-এ যোগ করুন:**
+   ```bash
+   git add .
+   ```
+
+3. **কাজটি কমিট করুন:**
+   ```bash
+   git commit -m "Configure CORS to allow cross-origin requests from Angular frontend"
+   ```
+
+4. **ফিচার ব্রাঞ্চটি গিটহাবে পুশ করুন:**
+   ```bash
+   git push -u origin feature/cors-configuration
+   ```
+
+5. **`dev` ব্রাঞ্চে স্যুইচ করুন:**
+   ```bash
+   git checkout dev
+   ```
+
+6. **GitHub থেকে লোকাল `dev` আপডেট করে নিন:**
+   ```bash
+   git pull origin dev
+   ```
+
+7. **ফিচার ব্রাঞ্চটিকে `dev` এ মার্জ করুন:**
+   ```bash
+   git merge feature/cors-configuration
+   ```
+
+8. **মার্জ করা পরিবর্তনগুলো GitHub-এ পুশ করুন:**
+   ```bash
+   git push origin dev
+   ```
+
+9. **(ঐচ্ছিক) লোকাল ফিচার ব্রাঞ্চটি ডিলিট করতে পারেন:**
+   ```bash
+   git branch -d feature/cors-configuration
+   ```
+
+গিট প্রসেসটি সম্পন্ন করা হলে চ্যাটে জানান। আমরা তারপর পরবর্তী ধাপে যাবো: **Step 11: Angular Frontend Setup**
+
+পরবর্তী ধাপে আমরা Angular frontend project তৈরি করবো এবং এটিকে Spring Boot backend এর সাথে connect করবো।
