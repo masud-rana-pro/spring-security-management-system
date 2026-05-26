@@ -1210,6 +1210,465 @@ I am waiting for the compilation task to complete. The system will automatically
    git checkout -b feature/login-authentication-manager
    ```
 
+### User Input
+
+step 7 kora hoise ekhon step 8 korbo er jonno git er ki kaj korte hobe agee daw
+
+*Conflict fixed, merged to dev, branch created*
+
+### Planner Response
+
+# Step 8: JWT Token Generation & Authentication Filter
+
+এই ধাপে আমরা JWT (JSON Web Token) ব্যবহার করে API request authenticate করার সিস্টেম তৈরি করেছি। এখন login করলে response-এ JWT token আসবে এবং পরবর্তী request গুলোতে সেই token ব্যবহার করে user authenticate হবে।
+
+---
+
+# Step 8 এ কী শিখবে?
+
+```text
+1. JWT কী এবং কেন দরকার
+2. JJWT library কী ভাবে কাজ করে
+3. JwtUtil class - Token generate, parse, validate
+4. JwtAuthFilter - প্রতিটি request এ JWT check করে
+5. SecurityConfig এ JwtAuthFilter যোগ করা
+6. login response-এ JWT token যোগ করা
+7. Postman দিয়ে test করা
+8. Git + GitHub workflow
+```
+
+---
+
+## JWT কী এবং কেন দরকার?
+
+JWT হলো JSON Web Token। এটি একটি signed token যা server তৈরি করে এবং client কে দেয়। client প্রতিটি request এ এই token header এ পাঠায়। server token টি verify করে user কে authenticate করে।
+
+আগে (Step 7): login করলে শুধু message, email, role return হতো।
+এখন (Step 8): login করলে message, email, role + JWT token return হবে।
+
+JWT ছাড়া, প্রতিটি request এ বার বার login করতে হতো। JWT ব্যবহার করলে একবার login করে token নিয়ে সেই token দিয়ে সব request করা যায়।
+
+---
+
+## Step 8.1: JWT Dependency যোগ করা (pom.xml)
+
+**ফাইল:** `backend/pom.xml`
+
+```xml
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-api</artifactId>
+    <version>0.12.6</version>
+</dependency>
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-impl</artifactId>
+    <version>0.12.6</version>
+    <scope>runtime</scope>
+</dependency>
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-jackson</artifactId>
+    <version>0.12.6</version>
+    <scope>runtime</scope>
+</dependency>
+```
+
+### কেন এই dependency দরকার?
+- **jjwt-api**: JWT তৈরি ও পার্স করার জন্য main library
+- **jjwt-impl**: API-র implementation (runtime এ লাগে)
+- **jjwt-jackson**: JWT কে JSON এ convert করার জন্য
+
+---
+
+## Step 8.2: JwtUtil Utility Class তৈরি করা
+
+**ফাইল:** `backend/src/main/java/com/secureauthlab/backend/security/JwtUtil.java`
+
+```java
+package com.secureauthlab.backend.security;
+
+import java.security.Key;
+import java.util.Base64;
+import java.util.Date;
+import java.util.function.Function;
+
+import javax.crypto.spec.SecretKeySpec;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
+
+@Component
+public class JwtUtil {
+
+    private final String jwtSecret;
+    private final long jwtExpiration;
+
+    public JwtUtil(
+            @Value("${jwt.secret}") String jwtSecret,
+            @Value("${jwt.expiration}") long jwtExpiration
+    ) {
+        this.jwtSecret = jwtSecret;
+        this.jwtExpiration = jwtExpiration;
+    }
+
+    private Key getSigningKey() {
+        byte[] keyBytes = Decoders.BASE64.decode(jwtSecret);
+        return Keys.hmacShaKeyFor(keyBytes);
+    }
+
+    public String generateToken(String email, String role) {
+        Date currentTime = new Date();
+        Date expiryTime = new Date(currentTime.getTime() + jwtExpiration);
+
+        return Jwts.builder()
+                .subject(email)
+                .claim("role", role)
+                .issuedAt(currentTime)
+                .expiration(expiryTime)
+                .signWith(getSigningKey())
+                .compact();
+    }
+
+    public String extractEmail(String token) {
+        return extractClaim(token, Claims::getSubject);
+    }
+
+    public String extractRole(String token) {
+        return extractClaim(token, claims -> claims.get("role", String.class));
+    }
+
+    public boolean isTokenValid(String token, UserDetails userDetails) {
+        String email = extractEmail(token);
+        return email.equals(userDetails.getUsername()) && !isTokenExpired(token);
+    }
+
+    private boolean isTokenExpired(String token) {
+        return extractExpiration(token).before(new Date());
+    }
+
+    private Date extractExpiration(String token) {
+        return extractClaim(token, Claims::getExpiration);
+    }
+
+    private <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
+        Claims claims = extractAllClaims(token);
+        return claimsResolver.apply(claims);
+    }
+
+    private Claims extractAllClaims(String token) {
+        return Jwts.parser()
+                .verifyWith((javax.crypto.SecretKey) getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+    }
+}
+```
+
+### প্রতিটি method কী করে?
+
+| Method | কাজ |
+|--------|-----|
+| `getSigningKey()` | `.env`-এর JWT_SECRET থেকে signing key তৈরি করে |
+| `generateToken()` | email, role দিয়ে JWT তৈরি করে + expiration time set করে |
+| `extractEmail()` | JWT থেকে email বের করে |
+| `extractRole()` | JWT থেকে role বের করে |
+| `isTokenValid()` | token কি এখনও valid কিনা check করে |
+| `isTokenExpired()` | token-এর expiration time check করে |
+
+### JWT Token-এর ভিতরে কী থাকে?
+
+```json
+{
+  "sub": "user@email.com",
+  "role": "USER",
+  "iat": 1685000000,
+  "exp": 1685086400
+}
+```
+
+- `sub` (subject) = user-এর email
+- `role` = USER বা ADMIN
+- `iat` (issued at) = কখন তৈরি হয়েছে
+- `exp` (expiration) = কখন মেয়াদ শেষ হবে
+
+---
+
+## Step 8.3: JwtAuthFilter তৈরি করা
+
+**ফাইল:** `backend/src/main/java/com/secureauthlab/backend/security/JwtAuthFilter.java`
+
+```java
+package com.secureauthlab.backend.security;
+
+import java.io.IOException;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+
+@Component
+@RequiredArgsConstructor
+public class JwtAuthFilter extends OncePerRequestFilter {
+
+    private final JwtUtil jwtUtil;
+    private final CustomUserDetailsService userDetailsService;
+
+    @Value("${jwt.header}")
+    private String jwtHeader;
+
+    @Value("${jwt.prefix}")
+    private String jwtPrefix;
+
+    @Override
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain
+    ) throws ServletException, IOException {
+
+        String authorizationHeader = request.getHeader(jwtHeader);
+
+        if (authorizationHeader == null || !authorizationHeader.startsWith(jwtPrefix + " ")) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        String token = authorizationHeader.substring(jwtPrefix.length() + 1);
+
+        try {
+            String email = jwtUtil.extractEmail(token);
+
+            if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+
+                if (jwtUtil.isTokenValid(token, userDetails)) {
+                    UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                            userDetails,
+                            null,
+                            userDetails.getAuthorities()
+                    );
+                    authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authToken);
+                }
+            }
+        } catch (Exception ex) {
+            // Token is invalid or expired - do not set authentication
+        }
+
+        filterChain.doFilter(request, response);
+    }
+}
+```
+
+### JwtAuthFilter কী করে? (Step by Step)
+
+```
+Client Request (with JWT token)
+        |
+        v
+JwtAuthFilter.doFilterInternal()
+        |
+        |--- 1. "Authorization" header আছে?
+        |       YES -> continue
+        |       NO  -> skip (filterChain.doFilter)
+        |
+        |--- 2. Header কি "Bearer " দিয়ে শুরু?
+        |       YES -> continue
+        |       NO  -> skip
+        |
+        |--- 3. Token থেকে email extract করো
+        |
+        |--- 4. Database থেকে user load করো
+        |
+        |--- 5. Token valid কিনা check করো
+        |       YES -> SecurityContext-এ set করো
+        |       NO  -> skip
+        |
+        v
+Next Filter (or Controller)
+```
+
+### `OncePerRequestFilter` কেন ব্যবহার করলাম?
+এটা নিশ্চিত করে যে প্রতিটি request-এ filter টি **একবারই** execute হবে। সাধারণ Filter হলে একই request এ multiple বার execute হতে পারে।
+
+### SecurityContextHolder কী?
+এটা Spring Security-র একটি class যা current authenticated user-এর information রাখে। একবার context এ set করলে controller বা service যে কোন জায়গা থেকে user-এর data access করা যায়।
+
+---
+
+## Step 8.4: AuthResponse আপডেট করা
+
+**ফাইল:** `backend/src/main/java/com/secureauthlab/backend/dto/AuthResponse.java`
+
+```java
+// JWT token field added to send the signed token after successful login
+private String token;
+```
+
+এখন response হবে:
+```json
+{
+  "message": "Login successful",
+  "email": "user@email.com",
+  "role": "USER",
+  "token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWI..."
+}
+```
+
+---
+
+## Step 8.5: AuthService-এ JWT Token যোগ করা
+
+**ফাইল:** `backend/src/main/java/com/secureauthlab/backend/service/AuthService.java`
+
+```java
+// Inject JwtUtil for generating tokens
+private final JwtUtil jwtUtil;
+
+// In login() method - generate JWT after successful authentication
+String accessToken = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
+
+// Return the token in response
+return new AuthResponse(
+    "Login successful",
+    user.getEmail(),
+    user.getRole().name(),
+    accessToken
+);
+```
+
+### Flow:
+```
+Client POST /api/auth/login (email + password)
+        |
+        v
+AuthService.login()
+        |
+        |--- AuthenticationManager.authenticate()
+        |       |--- CustomUserDetailsService.loadUserByUsername()
+        |       |--- PasswordEncoder.matches() (password check)
+        |
+        |--- Success? -> jwtUtil.generateToken(email, role)
+        |--- Fail?    -> throw ApiException("Invalid email or password")
+        |
+        v
+Response: { message, email, role, token }
+```
+
+---
+
+## Step 8.6: SecurityConfig-এ JwtAuthFilter যোগ করা
+
+**ফাইল:** `backend/src/main/java/com/secureauthlab/backend/config/SecurityConfig.java`
+
+```java
+// Add JWT filter before UsernamePasswordAuthenticationFilter
+.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+```
+
+### Filter Chain এখন:
+
+```
+Request
+    |
+    v
+JwtAuthFilter  (new - checks JWT token)
+    |
+    v
+UsernamePasswordAuthenticationFilter (default Spring filter)
+    |
+    v
+Controller
+```
+
+JwtAuthFilter আগে বসানোর কারণ: request আসার সাথে সাথে token check করা উচিত, default authentication filter-এ যাওয়ার আগেই।
+
+---
+
+## Step 8 Complete Criteria
+
+এইগুলো হলে Step 8 complete:
+
+```text
+pom.xml এ JJWT dependency যোগ হয়েছে
+JwtUtil.java তৈরি হয়েছে (generate, parse, validate)
+JwtAuthFilter.java তৈরি হয়েছে (OncePerRequestFilter)
+SecurityConfig এ filter যোগ হয়েছে
+login response এ JWT token return হয়
+Registration response এ null token return হয়
+mvn clean compile সফল হয়েছে
+```
+
+---
+
+### Step 8 এর জন্য Git-এর পরবর্তী কাজ (আপনার করণীয়):
+
+এখন আপনি লোকাল ব্রাঞ্চে কাজ শেষ করেছেন। এই পরিবর্তনগুলো commit করে push করতে নিচের কমান্ডগুলো একে একে ম্যানুয়ালি রান করুন:
+
+1. **টার্মিনাল থেকে স্ট্যাটাস চেক করুন:**
+   ```bash
+   git status
+   ```
+
+2. **সব ফাইল গিট ট্র্যাকিং-এ যোগ করুন:**
+   ```bash
+   git add .
+   ```
+
+3. **কাজটি কমিট করুন:**
+   ```bash
+   git commit -m "Implement JWT token generation and authentication filter"
+   ```
+
+4. **ফিচার ব্রাঞ্চটি গিটহাবে পুশ করুন:**
+   ```bash
+   git push -u origin feature/jwt-token-generation
+   ```
+
+5. **`dev` ব্রাঞ্চে স্যুইচ করুন:**
+   ```bash
+   git checkout dev
+   ```
+
+6. **GitHub থেকে লোকাল `dev` আপডেট করে নিন:**
+   ```bash
+   git pull origin dev
+   ```
+
+7. **ফিচার ব্রাঞ্চটিকে `dev` এ মার্জ করুন:**
+   ```bash
+   git merge feature/jwt-token-generation
+   ```
+
+8. **মার্জ করা পরিবর্তনগুলো GitHub-এ পুশ করুন:**
+   ```bash
+   git push origin dev
+   ```
+
+9. **(ঐচ্ছিক) লোকাল ফিচার ব্রাঞ্চটি ডিলিট করতে পারেন:**
+   ```bash
+   git branch -d feature/jwt-token-generation
+   ```
+
+গিট প্রসেসটি সম্পন্ন করা হলে চ্যাটে জানান। আমরা তারপর পরবর্তী ধাপে যাবো: **Step 9: Role-Based Authorization & Protected Endpoints**
+
 কমান্ডগুলো রান করা সম্পন্ন হলে আমাকে চ্যাটে জানান। আপনি জানালে আমি লগইন ফিচারের নতুন কাস্টমাইজড কোডটি লিখবো, টেস্টিং করবো এবং তার বিস্তারিত মেকানিজম আপনাকে বুঝিয়ে দেবো।
 
 ### User Input

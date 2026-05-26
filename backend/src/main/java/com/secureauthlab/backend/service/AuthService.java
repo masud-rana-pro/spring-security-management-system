@@ -18,6 +18,7 @@ import com.secureauthlab.backend.entity.User;
 import com.secureauthlab.backend.exception.ApiException;
 import com.secureauthlab.backend.repository.UserRepository;
 import com.secureauthlab.backend.security.CustomUserDetails;
+import com.secureauthlab.backend.security.JwtUtil;
 
 import lombok.RequiredArgsConstructor;
 
@@ -29,6 +30,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
+    private final JwtUtil jwtUtil;
 
     // Registers a new user into the system after verifying details
     public AuthResponse register(RegisterRequest request) {
@@ -50,11 +52,12 @@ public class AuthService {
         // Persist the user entity in the database
         User savedUser = userRepository.save(user);
 
-        // Return registration outcome details to the client
+        // Return registration outcome details to the client without any token
         return new AuthResponse(
                 "Registration successfull",
                 savedUser.getEmail(),
-                savedUser.getRole().name());
+                savedUser.getRole().name(),
+                null);
     }
 
     // Authenticates user credentials and returns login result with user details
@@ -72,11 +75,15 @@ public class AuthService {
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
             User user = userDetails.getUser();
 
-            // Return login success response with email and assigned role
+            // Generate a signed JWT containing user email and role for subsequent requests
+            String accessToken = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
+
+            // Return login success response with email, role, and the generated access token
             return new AuthResponse(
                 "Login successful",
                 user.getEmail(),
-                user.getRole().name()
+                user.getRole().name(),
+                accessToken
             );
         } catch (BadCredentialsException ex) {
             // Throw a generic error message instead of revealing which field is wrong

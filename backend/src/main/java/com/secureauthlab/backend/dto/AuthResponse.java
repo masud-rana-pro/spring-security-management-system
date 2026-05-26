@@ -18,4 +18,7 @@ public class AuthResponse {
     
     // Role assigned to the user
     private String role;
+
+    // Signed JWT string used for authenticating subsequent API requests
+    private String token;
 }

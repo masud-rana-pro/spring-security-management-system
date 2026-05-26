@@ -10,10 +10,17 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-// Security configuration class to define endpoint access policies and encoder beans
+import com.secureauthlab.backend.security.JwtAuthFilter;
+
+import lombok.RequiredArgsConstructor;
+
 @Configuration
+@RequiredArgsConstructor
 public class SecurityConfig {
+
+    private final JwtAuthFilter jwtAuthFilter;
 
     // Configure HTTP security filters, public paths, and authorization rules
     @Bean
@@ -28,7 +35,9 @@ public class SecurityConfig {
                 auth.requestMatchers("/api/auth/**").permitAll();
                 // Enforce authentication on all other incoming requests
                 auth.anyRequest().authenticated();
-            });
+            })
+            // Insert JWT authentication filter before the default username-password filter
+            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
