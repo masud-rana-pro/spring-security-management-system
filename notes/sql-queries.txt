@@ -1,0 +1,92 @@
+# SQL Queries - Secure Auth Lab
+
+This file contains useful MySQL queries for testing and debugging the database.
+
+---
+
+## Table Structure
+
+```sql
+-- Check if the users table exists and see its structure
+DESCRIBE users;
+```
+
+---
+
+## Select Queries
+
+```sql
+-- View all registered users
+SELECT id, name, email, role, provider, enabled, created_at 
+FROM users;
+
+-- Find a user by email
+SELECT * FROM users WHERE email = 'test@example.com';
+
+-- Count total users
+SELECT COUNT(*) AS total_users FROM users;
+
+-- Count users by role
+SELECT role, COUNT(*) AS count FROM users GROUP BY role;
+
+-- Count users by provider
+SELECT provider, COUNT(*) AS count FROM users GROUP BY provider;
+```
+
+---
+
+## Filter Queries
+
+```sql
+-- Find disabled accounts
+SELECT id, email, name, enabled FROM users WHERE enabled = false;
+
+-- Find admin users
+SELECT id, name, email FROM users WHERE role = 'ADMIN';
+
+-- Find users registered today
+SELECT * FROM users WHERE DATE(created_at) = CURDATE();
+
+-- Find users registered in last 7 days
+SELECT * FROM users 
+WHERE created_at >= NOW() - INTERVAL 7 DAY;
+```
+
+---
+
+## Maintenance Queries
+
+```sql
+-- Delete a user by email (use with caution)
+DELETE FROM users WHERE email = 'test@example.com';
+
+-- Delete all users (reset database)
+DELETE FROM users;
+
+-- Reset auto-increment counter
+ALTER TABLE users AUTO_INCREMENT = 1;
+
+-- Drop and recreate table (only if needed)
+DROP TABLE IF EXISTS users;
+```
+
+---
+
+## Troubleshooting
+
+```sql
+-- Check if database exists
+SHOW DATABASES LIKE 'secure_lab';
+
+-- Check MySQL connection
+SELECT VERSION();
+
+-- Show all tables in current database
+SHOW TABLES;
+
+-- Check table size
+SELECT 
+    TABLE_NAME, 
+    ROUND((DATA_LENGTH + INDEX_LENGTH) / 1024) AS size_kb
+FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = 'secure_lab';
