@@ -8,6 +8,7 @@ import com.secureauthlab.backend.dto.RegisterRequest;
 import com.secureauthlab.backend.entity.AuthProvider;
 import com.secureauthlab.backend.entity.Role;
 import com.secureauthlab.backend.entity.User;
+import com.secureauthlab.backend.exception.ApiException;
 import com.secureauthlab.backend.repository.UserRepository;
 
 import lombok.RequiredArgsConstructor;
@@ -21,7 +22,7 @@ public class AuthService {
 
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new RuntimeException("Email already exists");
+            throw new ApiException("Email already exists");
         }
 
         User user = new User();
