@@ -14,8 +14,11 @@ import com.secureauthlab.backend.dto.ErrorResponse;
 
 import jakarta.servlet.http.HttpServletRequest;
 
+// Catch all controller exceptions globally and format them as unified JSON error responses
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    // Handle custom ApiException thrown by our services when business logic checks fail
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ErrorResponse> handleApiException(ApiException ex, HttpServletRequest req) {
         ErrorResponse response = new ErrorResponse(
@@ -30,9 +33,9 @@ public class GlobalExceptionHandler {
             response,
             HttpStatus.BAD_REQUEST
         );
-
     }
 
+    // Handle payload validation exceptions (e.g. invalid email format or empty name)
     @ExceptionHandler(MethodArgumentNotValidException.class) 
     public ResponseEntity<ErrorResponse> handleValidationException(
         MethodArgumentNotValidException ex,
@@ -40,7 +43,10 @@ public class GlobalExceptionHandler {
     ) {
         Map<String, String> validationErrors = new HashMap<>();
 
-        ex.getBindingResult().getFieldErrors().forEach(err -> validationErrors.put(err.getField(), err.getDefaultMessage()));
+        // Extract field validation failure messages and map them to their corresponding field names
+        ex.getBindingResult().getFieldErrors().forEach(err -> 
+            validationErrors.put(err.getField(), err.getDefaultMessage())
+        );
         
         ErrorResponse response = new ErrorResponse(
             LocalDateTime.now(),
@@ -54,9 +60,9 @@ public class GlobalExceptionHandler {
             response,
             HttpStatus.BAD_REQUEST
         );
-        
     }
 
+    // Catch-all handler for any unhandled exceptions to prevent leaking internal stack traces to clients
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGlobalException (
         Exception ex,
@@ -74,6 +80,5 @@ public class GlobalExceptionHandler {
             response,
             HttpStatus.INTERNAL_SERVER_ERROR
         );
-        
     }
 } 
