@@ -1115,6 +1115,8 @@ thik ase tummi ekhon agee amam ei full project appropriately comment add koro en
 
 *Edited relevant file*
 
+*Edited relevant file*
+
 *Viewed [AuthService.java](file:///h:/project-for-github/security-management-system/backend/src/main/java/com/secureauthlab/backend/service/AuthService.java) *
 
 *Viewed [AuthController.java](file:///h:/project-for-github/security-management-system/backend/src/main/java/com/secureauthlab/backend/controller/AuthController.java) *
@@ -1128,6 +1130,8 @@ thik ase tummi ekhon agee amam ei full project appropriately comment add koro en
 *Edited relevant file*
 
 *Viewed [AuthProvider.java](file:///h:/project-for-github/security-management-system/backend/src/main/java/com/secureauthlab/backend/entity/AuthProvider.java) *
+
+*Edited relevant file*
 
 *Edited relevant file*
 
@@ -1678,3 +1682,468 @@ step 7 kora hoise ekhon step 8 korbo er jonno git er ki kaj korte hobe agee daw
 *Viewed [AuthService.java](file:///h:/project-for-github/security-management-system/backend/src/main/java/com/secureauthlab/backend/service/AuthService.java) *
 
 *Viewed [AuthService.java](file:///h:/project-for-github/security-management-system/backend/src/main/java/com/secureauthlab/backend/service/AuthService.java) *
+
+# Step 9: Role-Based Authorization with @PreAuthorize
+
+এই ধাপে আমরা Role-Based Authorization যোগ করেছি। এখন different role এর user different endpoint access করতে পারবে। ADMIN role এর user শুধু admin endpoint access করতে পারবে, আর USER role এর user শুধু user endpoint access করতে পারবে।
+
+---
+
+# Step 9 এ কী শিখবে?
+
+```text
+1. Role-Based Authorization কী এবং কেন দরকার
+2. @EnableMethodSecurity annotation
+3. @PreAuthorize annotation ব্যবহার করা
+4. AdminController তৈরি করা (শুধু ADMIN role)
+5. UserController তৈরি করা (USER + ADMIN)
+6. @AuthenticationPrincipal দিয়ে current user access করা
+7. SecurityContext-এ authority কিভাবে set হয়
+8. Postman দিয়ে test করা
+9. Git + GitHub workflow
+```
+
+---
+
+## Role-Based Authorization কী এবং কেন দরকার?
+
+Role-Based Authorization মানে হলো different user role অনুযায়ী access control করা। যেমন:
+
+- একজন সাধারণ USER শুধু নিজের profile দেখতে পারবে
+- একজন ADMIN সব user-এর data দেখতে পারবে
+- একজন USER admin dashboard access করতে পারবে না
+
+এটা security এর জন্য খুবই গুরুত্বপূর্ণ। আমাদের app-এ ইতিমধ্যে `Role` enum আছে যেখানে `ADMIN` এবং `USER` two roles defined।
+
+---
+
+## Step 9.1: SecurityConfig-এ @EnableMethodSecurity যোগ করা
+
+**ফাইল:** `backend/src/main/java/com/secureauthlab/backend/config/SecurityConfig.java`
+
+আগে ছিল:
+```java
+@Configuration
+@RequiredArgsConstructor
+public class SecurityConfig {
+```
+
+এখন হয়েছে:
+```java
+@Configuration
+@EnableMethodSecurity
+@RequiredArgsConstructor
+public class SecurityConfig {
+```
+
+### @EnableMethodSecurity কেন দরকার?
+
+এই annotation টি Spring Security কে বলে:
+> "Controller গুলোতে @PreAuthority, @PostAuthorize, @Secured ইত্যাদি annotation check করো"
+
+এই annotation ছাড়া, controller এ আমরা যে @PreAuthorize লিখবো, সেটা কাজ করবে না। Spring ignore করে দেবে।
+
+---
+
+## Step 9.2: AdminController তৈরি করা
+
+**ফাইল:** `backend/src/main/java/com/secureauthlab/backend/controller/AdminController.java`
+
+```java
+package com.secureauthlab.backend.controller;
+
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.secureauthlab.backend.repository.UserRepository;
+
+import lombok.RequiredArgsConstructor;
+
+@RestController
+@RequestMapping("/api/admin")
+@RequiredArgsConstructor
+public class AdminController {
+
+    private final UserRepository userRepository;
+
+    @GetMapping("/dashboard")
+    @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+    public String dashboard() {
+        long totalUsers = userRepository.count();
+        return "Admin Dashboard - Total registered users: " + totalUsers;
+    }
+}
+```
+
+### প্রতিটি annotation ও method কী করে?
+
+| Annotation/Method | কাজ |
+|-------------------|-----|
+| `@RestController` | এই ক্লাসটি REST API endpoint সরবরাহ করে |
+| `@RequestMapping("/api/admin")` | সব endpoint `/api/admin/` prefix এ থাকবে |
+| `@PreAuthorize("hasAuthority('ROLE_ADMIN')")` | **এটাই মূল star** - শুধু ADMIN role এর user এই endpoint call করতে পারবে |
+| `userRepository.count()` | Database থেকে total users count বের করে |
+
+### @PreAuthorize কিভাবে কাজ করে?
+
+```
+Request আসলো: GET /api/admin/dashboard
+(Header: Authorization: Bearer <token>)
+        |
+        v
+Step 1: JwtAuthFilter.doFilterInternal()
+        |
+        |--- Request এ Authorization header আছে? -----> YES
+        |--- Bearer prefix match করে? ----------------> YES
+        |--- Token থেকে email extract করো
+        |--- Database থেকে CustomUserDetails load করো
+        |--- Token valid? ---------------------------> YES
+        |       |--- SecurityContextHolder.setAuthentication(authToken)
+        |       |       এখানে authToken এ userDetails এবং authorities
+        |       |       (ROLE_USER / ROLE_ADMIN) set করা আছে
+        |
+        v
+Step 2: Spring Security @PreAuthorize check
+        |
+        |--- Controller এ @PreAuthorize("hasAuthority('ROLE_ADMIN')")
+        |--- SecurityContext-এর user এর authority list এ "ROLE_ADMIN" আছে?
+        |       |
+        |       +-- YES (if ADMIN) -> Controller method execute হবে
+        |       |       Response: "Admin Dashboard - Total users: 5"
+        |       |
+        |       +-- NO (if USER) -> 403 Forbidden
+        |               Response: Access Denied
+```
+
+### Authority কোথা থেকে আসে?
+
+মনে রাখবেন, `CustomUserDetails.java` তে আমরা `getAuthorities()` method define করেছিলাম:
+
+```java
+@Override
+public Collection<? extends GrantedAuthority> getAuthorities() {
+    return Collections.singletonList(
+        new SimpleGrantedAuthority("ROLE_" + user.getRole().name())
+    );
+}
+```
+
+`hasAuthority('ROLE_ADMIN')` এই authority কে match করে।
+
+- যদি user.role = `ADMIN` হয় -> authority = `"ROLE_ADMIN"` -> @PreAuthorize PASS
+- যদি user.role = `USER` হয় -> authority = `"ROLE_USER"` -> @PreAuthorize FAIL (403)
+
+---
+
+## Step 9.3: UserController তৈরি করা
+
+**ফাইল:** `backend/src/main/java/com/secureauthlab/backend/controller/UserController.java`
+
+```java
+package com.secureauthlab.backend.controller;
+
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.secureauthlab.backend.security.CustomUserDetails;
+
+@RestController
+@RequestMapping("/api/user")
+public class UserController {
+
+    @GetMapping("/profile")
+    @PreAuthorize("hasAuthority('ROLE_USER') or hasAuthority('ROLE_ADMIN')")
+    public String profile(@AuthenticationPrincipal CustomUserDetails userDetails) {
+        return "User Profile - Email: " + userDetails.getUsername()
+                + ", Name: " + userDetails.getUser().getName()
+                + ", Role: " + userDetails.getUser().getRole();
+    }
+}
+```
+
+### @AuthenticationPrincipal annotation কী করে?
+
+এই annotation টি Spring Security-র `SecurityContextHolder` থেকে current authenticated user-এর `principal` object টি automatically inject করে।
+
+আমাদের ক্ষেত্রে principal হলো `CustomUserDetails` object।
+
+```java
+public String profile(@AuthenticationPrincipal CustomUserDetails userDetails)
+```
+
+এর মাধ্যমে আমরা সরাসরি controller parameter এ current user এর তথ্য পেয়ে যাচ্ছি। আলাদা করে database query বা SecurityContextHolder.getContext() call করতে হচ্ছে না।
+
+### `@PreAuthorize` এ "or" ব্যবহার:
+
+```java
+@PreAuthorize("hasAuthority('ROLE_USER') or hasAuthority('ROLE_ADMIN')")
+```
+
+এখানে "or" ব্যবহার করায়:
+- USER role থাকলে -> PASS
+- ADMIN role থাকলে -> PASS
+- কোনো role না থাকলে (unauthenticated) -> 403
+
+মানে এই endpoint সব authenticated user-এর জন্য open।
+
+### @AuthenticationPrincipal vs manually get করা
+
+আমরা চাইলে এভাবে-ও করতে পারতাম:
+
+```java
+// Without @AuthenticationPrincipal (more code)
+SecurityContextHolder.getContext().getAuthentication().getPrincipal()
+```
+
+কিন্তু `@AuthenticationPrincipal` use করলে:
+- Code cleaner হয়
+- Type safe (directly CustomUserDetails পাই)
+- Test করা সহজ
+
+---
+
+## Step 9.4: UserRepository এ count() method
+
+AdminController এ আমরা `userRepository.count()` use করেছি।这个方法টি JpaRepository থেকে automatically আসে, আমাদের define করতে হয়নি।
+
+```java
+public interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByEmail(String email);
+    Boolean existsByEmail(String email);
+    // count() method automatically available from JpaRepository
+}
+```
+
+`JpaRepository` already has these built-in methods:
+| Method | কাজ |
+|--------|-----|
+| `count()` | Total records count করে |
+| `findAll()` | সব records return করে |
+| `findById()` | ID দিয়ে search করে |
+| `save()` | New record insert বা existing update করে |
+| `delete()` | Record delete করে |
+
+---
+
+## Step 9.5: Complete Flow Diagram
+
+```
+                    +------------------+
+                    |   Client App     |
+                    +--------+---------+
+                             |
+              +--------------+--------------+
+              |                             |
+              v                             v
+    POST /api/auth/login         GET /api/admin/dashboard
+    (no auth required)           (Header: Bearer <token>)
+              |                             |
+              v                             v
+    AuthService.login()          JwtAuthFilter
+              |                       (validate token)
+              |                             |
+              v                             v
+    AuthenticationManager         SecurityContext set
+    .authenticate()               with user + authorities
+              |                             |
+              v                             v
+    JwtUtil.generateToken()      @PreAuthorize check
+    (email, role)                 "hasAuthority('ROLE_ADMIN')"
+              |                             |
+              v                      +------+------+
+    Response: token, email, role    |             |
+                                    v             v
+                              If ADMIN       If USER
+                              -> 200 OK      -> 403 Forbidden
+                              Dashboard      Access Denied
+```
+
+---
+
+## Step 9.6: Postman Test Cases
+
+### Test 1: Register a USER
+
+```http
+POST http://localhost:8080/api/auth/register
+Content-Type: application/json
+
+{
+    "name": "Test User",
+    "email": "user@test.com",
+    "password": "123456"
+}
+```
+
+Response:
+```json
+{
+    "message": "Registration successfull",
+    "email": "user@test.com",
+    "role": "USER",
+    "token": null
+}
+```
+
+### Test 2: Login as USER
+
+```http
+POST http://localhost:8080/api/auth/login
+Content-Type: application/json
+
+{
+    "email": "user@test.com",
+    "password": "123456"
+}
+```
+
+Response থেকে token কপি করে রাখুন।
+
+### Test 3: USER tries /api/user/profile (Should WORK)
+
+```http
+GET http://localhost:8080/api/user/profile
+Authorization: Bearer <user-token>
+```
+
+Expected:
+```text
+User Profile - Email: user@test.com, Name: Test User, Role: USER
+```
+
+### Test 4: USER tries /api/admin/dashboard (Should FAIL)
+
+```http
+GET http://localhost:8080/api/admin/dashboard
+Authorization: Bearer <user-token>
+```
+
+Expected:
+```
+403 Forbidden - Access Denied
+```
+
+### Test 5: You need an ADMIN user
+
+Currently there is no way to register as ADMIN from API (registration always creates USER role). To test admin endpoints, you have two options:
+
+**Option A:** Manually update the role in the database:
+```sql
+UPDATE users SET role = 'ADMIN' WHERE email = 'user@test.com';
+```
+
+**Option B:** We can add a command-line runner to create an admin user (will do in a future step).
+
+### Test 6: Login as ADMIN and test admin endpoint
+
+Login with the email whose role is ADMIN:
+```http
+POST http://localhost:8080/api/auth/login
+Content-Type: application/json
+
+{
+    "email": "admin@test.com",
+    "password": "admin123"
+}
+```
+
+Then:
+```http
+GET http://localhost:8080/api/admin/dashboard
+Authorization: Bearer <admin-token>
+```
+
+Expected:
+```text
+Admin Dashboard - Total registered users: 5
+```
+
+---
+
+## Step 9 Complete Criteria
+
+এইগুলো হলে Step 9 complete:
+
+```text
+@EnableMethodSecurity যোগ করা হয়েছে SecurityConfig এ
+AdminController তৈরি হয়েছে @PreAuthorize সহ
+UserController তৈরি হয়েছে @PreAuthorize + @AuthenticationPrincipal সহ
+/api/user/profile endpoint USER এবং ADMIN উভয়েই access করতে পারে
+/api/admin/dashboard endpoint শুধু ADMIN role access করতে পারে
+USER role admin endpoint access করলে 403 Forbidden error আসে
+mvn clean compile সফল হয়েছে
+```
+
+---
+
+## Step 9 Summary (কী শিখলাম?)
+
+| Concept | ব্যাখ্যা |
+|---------|---------|
+| @EnableMethodSecurity | Spring Security কে method-level annotation check করতে বলে |
+| @PreAuthorize | Controller method এ access control rule define করে |
+| hasAuthority('ROLE_ADMIN') | Check করে user এর authority list এ "ROLE_ADMIN" আছে কিনা |
+| hasAuthority('ROLE_USER') or hasAuthority('ROLE_ADMIN') | Multiple role কে allow করে (OR condition) |
+| @AuthenticationPrincipal | Current authenticated user কে automatically inject করে |
+| 403 Forbidden | User authenticated হলেও permission নেই |
+| SecurityContext | Current user এর authentication তথ্য রাখে |
+
+---
+
+### Step 9 এর জন্য Git-এর পরবর্তী কাজ (আপনার করণীয়):
+
+এখন আপনি লোকাল ব্রাঞ্চে কাজ শেষ করেছেন। এই পরিবর্তনগুলো commit করে push করতে নিচের কমান্ডগুলো একে একে ম্যানুয়ালি রান করুন:
+
+1. **টার্মিনাল থেকে স্ট্যাটাস চেক করুন:**
+   ```bash
+   git status
+   ```
+
+2. **সব ফাইল গিট ট্র্যাকিং-এ যোগ করুন:**
+   ```bash
+   git add .
+   ```
+
+3. **কাজটি কমিট করুন:**
+   ```bash
+   git commit -m "Implement role-based authorization with PreAuthorize annotation"
+   ```
+
+4. **ফিচার ব্রাঞ্চটি গিটহাবে পুশ করুন:**
+   ```bash
+   git push -u origin feature/role-based-authorization
+   ```
+
+5. **`dev` ব্রাঞ্চে স্যুইচ করুন:**
+   ```bash
+   git checkout dev
+   ```
+
+6. **GitHub থেকে লোকাল `dev` আপডেট করে নিন:**
+   ```bash
+   git pull origin dev
+   ```
+
+7. **ফিচার ব্রাঞ্চটিকে `dev` এ মার্জ করুন:**
+   ```bash
+   git merge feature/role-based-authorization
+   ```
+
+8. **মার্জ করা পরিবর্তনগুলো GitHub-এ পুশ করুন:**
+   ```bash
+   git push origin dev
+   ```
+
+9. **(ঐচ্ছিক) লোকাল ফিচার ব্রাঞ্চটি ডিলিট করতে পারেন:**
+   ```bash
+   git branch -d feature/role-based-authorization
+   ```
+
+গিট প্রসেসটি সম্পন্ন করা হলে চ্যাটে জানান। আমরা তারপর পরবর্তী ধাপে যাবো: **Step 10: CORS Configuration**
+
+পরবর্তী ধাপে আমরা CORS (Cross-Origin Resource Sharing) কনফিগার করবো যাতে Angular frontend থেকে backend এ request পাঠানো যায়।

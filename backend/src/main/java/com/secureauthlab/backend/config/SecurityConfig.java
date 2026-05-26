@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -17,6 +18,7 @@ import com.secureauthlab.backend.security.JwtAuthFilter;
 import lombok.RequiredArgsConstructor;
 
 @Configuration
+@EnableMethodSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -33,6 +35,8 @@ public class SecurityConfig {
                 // Allow unrestricted access to public and authentication endpoints
                 auth.requestMatchers("/api/public/**").permitAll();
                 auth.requestMatchers("/api/auth/**").permitAll();
+                auth.requestMatchers("/api/user/**").hasAnyAuthority("ROLE_USER", "ROLE_ADMIN");
+                auth.requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN");
                 // Enforce authentication on all other incoming requests
                 auth.anyRequest().authenticated();
             })

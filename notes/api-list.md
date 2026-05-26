@@ -105,6 +105,52 @@ http://localhost:8080
 
 ---
 
+## Protected Endpoints (Authentication Required)
+
+### GET /api/user/profile
+- **Description**: Get profile of the currently authenticated user
+- **Auth Required**: Yes (any authenticated user - USER or ADMIN)
+- **Headers Required**: `Authorization: Bearer <token>`
+- **Success Response** (200):
+  ```text
+  User Profile - Email: user@example.com, Name: John Doe, Role: USER
+  ```
+- **Error Response** (401) - No Token:
+  ```json
+  {
+    "timestamp": "2026-05-27T00:00:00",
+    "status": 403,
+    "error": "Forbidden",
+    "message": "Access Denied",
+    "path": "/api/user/profile",
+    "validationErrors": null
+  }
+  ```
+
+---
+
+### GET /api/admin/dashboard
+- **Description**: Admin dashboard showing system statistics
+- **Auth Required**: Yes (ADMIN role only)
+- **Headers Required**: `Authorization: Bearer <token>`
+- **Success Response** (200):
+  ```text
+  Admin Dashboard - Total registered users: 5
+  ```
+- **Error Response** (403) - USER trying to access:
+  ```json
+  {
+    "timestamp": "2026-05-27T00:00:00",
+    "status": 403,
+    "error": "Forbidden",
+    "message": "Access Denied",
+    "path": "/api/admin/dashboard",
+    "validationErrors": null
+  }
+  ```
+
+---
+
 ## How to Use JWT Token in Postman
 
 1. Call `POST /api/auth/login` with valid credentials
@@ -119,17 +165,18 @@ http://localhost:8080
 
 ---
 
+## Role-Based Access Summary
+
+| Endpoint | Role Required | Who Can Access |
+|----------|--------------|----------------|
+| `/api/public/**` | None | Everyone |
+| `/api/auth/**` | None | Everyone |
+| `/api/user/profile` | ROLE_USER or ROLE_ADMIN | Normal users + Admins |
+| `/api/admin/dashboard` | ROLE_ADMIN only | Only Admins |
+
+---
+
 ## Planned Endpoints (Not Yet Implemented)
-
-### GET /api/admin/users
-- **Description**: List all users (Admin only)
-- **Auth Required**: Yes (ADMIN role)
-- **Status**: Not implemented yet
-
-### GET /api/user/profile
-- **Description**: Get current user profile
-- **Auth Required**: Yes (USER role)
-- **Status**: Not implemented yet
 
 ### POST /api/auth/oauth2/google
 - **Description**: Login with Google OAuth2
